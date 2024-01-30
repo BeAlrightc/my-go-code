@@ -2,6 +2,8 @@ package main
 import (
 	"fmt"
 )
+//定义一个结构体 0
+                                 
 type ValNode struct {
 	row int
 	col int

@@ -17315,4 +17315,317 @@ func main() {
 
 队列是一个有序列表，可以用数组或是链表来实现
 
-遵循先入先出的原则，即：先存入队列的数据，要先取出，后存入的要后取
+遵循**先入先出**的原则，即：先存入队列的数据，要先取出，后存入的要后取出
+
+#### -2.数组模拟队列
+
+理论：
+
+- 队列本身是有序列表，若使用数组的结构来存储队列的数据，组队列数组的声明如下，其中maxsize是该队列的最大容量
+
+- 因为队列的输出、输入是分别从前后端来处理，因此需要两个变量front及rear分别记录队列前后端的下标；front会随着数据输出而改变，而rear则是随着数据输入而改变如图所示：
+
+  ![](D:\myfile\GO\project\src\go_code\pic\数据结构\pic5.jpg)
+
+当我们将数据存入队列时称为"addqueue",addqueue的处理需要有两个步骤
+
+1）将尾指针往后移：res+1,front==real
+
+2）若尾指针rear小于等于队列的最大下标MaxSize-1，则将数据存入rear所指的数组元素种，否则无法存入数据
+
+思路分析
+
+1.创建一个数组array,是作为队列的一个字段
+
+2.front初始化为-1
+
+3.rear表示队列尾部，初始化为-1
+
+4.完成队列的基本查找
+
+addQueue//加入数据到队列
+
+GetQueue//从队列中取出数据
+
+ShowQueue //显示队列
+
+代码
+
+```go
+package main
+import (
+	"fmt"
+	"os"
+	"errors"
+)
+//使用一个结构体管理队列
+type Queue struct {
+	maxSize int
+	array [5]int//数组 ==》模拟队列
+	front int //表示指向队列列首
+	rear int //表示指向队列的尾部
+}
+
+//添加数据到队列
+func (this *Queue) AddQueue(val int)(err error){
+
+	//先判断队列是否已满
+	if this.rear == this.maxSize -1 {//重要的提示；rear是队列尾部（含最后这个元素）
+		return errors.New("queue full!")
+	}
+
+	this.rear++ //rear后挪一下
+	this.array[this.rear] = val
+	return 
+}
+
+//从队列中取出数据
+func (this *Queue) GetQueue() (val int,err error) {
+	//先判断队列是否为空
+	if this.rear == this.front {//队空
+		return -1,errors.New("queue empty!")
+	}
+	this.front ++
+	val =this.array[this.front]
+	fmt.Println("front的值为：",this.front)
+	return val ,err
+
+}
+
+//显示队列,找到队首遍历到队尾
+func (this *Queue)ShowQueue(){
+	fmt.Println("队列当前的情况是:")
+	//this.front不包含队首元素
+	for i :=this.front +1; i <=this.rear; i++ {
+		fmt.Printf("array[%d]=%d\t",i,this.array[i])
+	}
+	fmt.Println(" ")
+}
+
+
+//编写一个函数测试一下
+func main(){
+	//先创建一个队列
+	queue := &Queue{
+		maxSize : 5,
+		front : -1,
+		rear : -1,		
+	}
+	
+	var key string
+	var val int
+
+	for {
+		fmt.Println("1.输入add 表示添加数据到队列")
+		fmt.Println("2.输入get 表示从该队列获取到元素")
+		fmt.Println("3.输入show 表示显示队列")
+		fmt.Println("4.输入exit 退出")
+
+		fmt.Scanln(&key)
+		switch key {
+		case "add":
+			fmt.Println("输入你要入队列数")
+			fmt.Scanln(&val)
+			err :=queue.AddQueue(val)
+			if err != nil{
+				fmt.Println(err.Error())
+			}else{
+				fmt.Println("加入队列ok")
+			}
+		case "get":
+			val,err :=queue.GetQueue() 
+			if err != nil {
+				fmt.Println(err.Error())
+			}else{
+				fmt.Println("从队列中取出了一个数=",val)
+			}
+		case "show":
+			queue.ShowQueue()
+		case "exit":
+			os.Exit(0)
+		}
+    }
+}
+	
+```
+
+​    现在可以简单的实现一个队列但是存在一个问题，就是当存放一个数入队列后再取出该数后这个数组位置就不能用了，如果存满后都取走的话就无法添加数入队列
+
+1)上面代码实现了基本队列结构，但是没有有效的利用数组空间
+
+2)请思考如何使用数组实现一个环形队列
+
+改进在取值的func进行改进操作
+
+```go
+//从队列中取出数据
+func (this *Queue) GetQueue() (val int,err error) {
+	//先判断队列是否为空
+	if this.rear == this.front {//队空
+		return -1,errors.New("queue empty!")
+	}
+	this.front ++
+	val =this.array[this.front]
+	fmt.Println("front的值为：",this.front)
+	//当front==rear=4的时候对这两个变量的值进行重制-1就可以了
+	if this.front==this.maxSize-1{
+		this.front= -1
+		this.rear = -1
+	}
+	return val ,err
+
+}
+```
+
+但是还是有缺陷，因为这样做的话只有全部元素取完才可以进行添加元素操作，必须是rear=front=maxSize-1才可以。
+
+继续改进吧！
+
+-3.数组实现环形列表
+
+思路
+
+   对前面的数组模拟队列的优化，充分利用数组因此将数组看做是一个环形的（通过取模的方式来实现即可）
+
+提醒：
+
+1）尾索引的下一个为头索引时表示队列满，即将队列容量空出一个作为约定，这个在做判断队列满的时候需要(tail +1)%maxSize ==head满
+
+2）tail ==head[空]
+
+分析思路
+
+1）什么时侯表示    队列满？
+
+(tail +1)%maxSize=head
+
+2）tail == head表示空
+
+3）初始化时：tail=0  head =0
+
+4)怎么统计该队列有多少元素
+
+(tail + maxSize -head) % maxSize
+
+代码
+
+```go
+package main
+import (
+	"fmt"
+	"os"
+	"errors"
+)
+
+//使用一个结构题管理环形队列
+type CircleQueue struct{
+	maxSize int //4
+	array [5]int //数组
+	head int //指向对头
+	tail int//指向队尾
+}
+
+//如队列AddQueue(push) GetQueue(pop)
+//往队列中推入一个元素(入队列)
+func (this *CircleQueue) Push(val int) (err error){
+	if this.IsFull(){
+		return errors.New("queue full")
+	}
+//分析出this.tail在队列尾部但是包含最后的元素
+	this.array[this.tail]=val  //把值给尾部
+	this.tail =(this.tail + 1) % this.maxSize
+	return
+}
+//从队列中弹出一个元素(出队列)
+func (this *CircleQueue) Pop()(val int,err error){
+
+	if this.IsEmpty(){
+		return 0,errors.New("queue empty")
+	}
+	//取出,head是指向队首的，含队首元素
+	val =this.array[this.head]
+	this.head=(this.head + 1) % this.maxSize
+	return 
+}
+
+//显示队列
+func (this *CircleQueue) ListQueue(){
+	fmt.Println("环形队列情况如下：")
+	//取出当前队列有多少个元素
+	size := this.Size()
+	if size == 0{
+		fmt.Println("队列为空")
+	}
+
+	//设计一个辅助变量，指向head
+	tempHead :=this.head
+	for i := 0;i < size; i++{
+		fmt.Printf("arr[%d]=%d\t",tempHead,this.array[tempHead])
+		tempHead = (tempHead  +1) %this.maxSize
+	}
+	fmt.Println()
+}
+
+//判断环形队列为满
+func (this *CircleQueue) IsFull() bool {
+	return (this.tail +1) % this.maxSize == this.head
+}
+//判断环形队列是否空
+func (this *CircleQueue) IsEmpty() bool {
+	return this.tail == this.head
+}
+//取出环形队列有多少个元素
+func (this *CircleQueue) Size() int {
+	//这是一个关键算法
+	return (this.tail + this.maxSize - this.head) % this.maxSize
+}
+func main(){
+
+	//初始化一个环形队列
+	queue := &CircleQueue{
+		maxSize : 5,
+		head : 0,
+		tail : 0,
+	}
+	var key string
+	var val int
+
+	for {
+		fmt.Println("1.输入add 表示添加数据到队列")
+		fmt.Println("2.输入get 表示从该队列获取到元素")
+		fmt.Println("3.输入show 表示显示队列")
+		fmt.Println("4.输入exit 退出")
+
+		fmt.Scanln(&key)
+		switch key {
+		case "add":
+			fmt.Println("输入你要入队列数")
+			fmt.Scanln(&val)
+			err :=queue.Push(val)
+			if err != nil{
+				fmt.Println(err.Error())
+			}else{
+				fmt.Println("加入队列ok")
+			}
+		case "get":
+			val,err :=queue.Pop() 
+			if err != nil {
+				fmt.Println(err.Error())
+			}else{
+				fmt.Println("从队列中取出了一个数=",val)
+			}
+		case "show":
+			queue.ListQueue()
+		case "exit":
+			os.Exit(0)
+		}
+    }
+}
+
+```
+
+运行结果如下：将元素push到队列，满了之后对其进行pop再push的效果图
+
+![](D:\myfile\GO\project\src\go_code\pic\数据结构\pic6.jpg)
+
+**这个要默写下来！！！！**
