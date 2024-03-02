@@ -122,9 +122,9 @@ func main() {
 
 1.基于http的模板引擎内容
 
-首先创建一个tmpl模板文件其实就是一个html文件
+首先创建一个**tmpl模板文件**其实就是一个html文件
 
-hello.tmpl
+hello.**tmpl**
 
 ```html
 <!DOCTYPE html>
@@ -847,7 +847,7 @@ gin默认中间件
 
 当在中间件或`handler`中启动新的`goroutine`时，**不能使用**原始的上下文（c *gin.Context），必须使用其只读副本（`c.Copy()`）
 
-## 五、ORM的学习
+# GORM的学习
 
 ### 1.安装与使用
 
@@ -861,6 +861,14 @@ go get -u github.com/jinzhu/gorm
 ### 2、连接数据库
 
 连接不同的数据库都需要导入对应数据的驱动程序，`GORM`已经贴心的为我们包装了一些驱动程序，只需要按如下方式导入需要的数据库驱动即可：
+
+把mysql连接的驱动download下来
+
+```go
+go get -u github.com/jinzhu/gorm/dialects/mysql 
+```
+
+
 
 ```go
 import _ "github.com/jinzhu/gorm/dialects/mysql"
@@ -1075,7 +1083,7 @@ type User struct {} // 默认表名是 `users`
 func (User) TableName() string {
   return "profiles"
 }
-
+//也可以通通过用户属性为其生成相应的表名
 func (u User) TableName() string {
   if u.Role == "admin" {
     return "admin_users"
@@ -1168,18 +1176,35 @@ CRUD通常指数据库的增删改查操作，本文详细介绍了如何使用G
 
 本文中的`db`变量为`*gorm.DB`对象，例如：
 
+我们将连接数据库的配置放到dao/层下的mysql.go中
+
 ```go
+package dao
+
 import (
-  "github.com/jinzhu/gorm"
-  _ "github.com/jinzhu/gorm/dialects/mysql"
+	"fmt"
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 )
 
-func main() {
-  db, err := gorm.Open("mysql", "user:password@/dbname?charset=utf8&parseTime=True&loc=Local")
-  defer db.Close()
-  
-  // db.Xx
+var (
+	DB *gorm.DB
+)
+//连接
+func InitMysql() (err error) {
+	dsn := "root:000000@tcp(127.0.0.1:3306)/bubble?charset=utf8mb4&parseTime=True"
+	DB, err = gorm.Open("mysql", dsn)
+	if err != nil {
+		return
+	}
+	fmt.Println("数据库连接成功")
+	return DB.DB().Ping()
 }
+//关闭连接
+func Close() {
+	DB.Close()
+}
+
 ```
 
 ## 创建
@@ -1188,12 +1213,21 @@ func main() {
 
 首先定义模型：
 
+在models层建立users.go
+
 ```go
+package models
+
 type User struct {
-	ID           int64
-	Name         string
-	Age          int64
+	ID   int64
+	Name string `gorm:"default:'老王'"`
+	Age  int64
 }
+//指定其表名为user_profile
+func (u User) TableName() string {
+	return "user_profile"
+}
+
 ```
 
 使用使用`NewRecord()`查询主键是否存在，主键为空使用`Create()`创建记录：
@@ -1206,6 +1240,39 @@ db.Create(&user)   // 创建user
 db.NewRecord(user) // 创建`user`后返回`false`
 ```
 
+在main.go进行建表操作
+
+```go
+package main
+
+import (
+	"fmt"
+	"grom_crud/dao"
+	"grom_crud/models"
+)
+
+func main() {
+	err := dao.InitMysql()
+	if err != nil {
+		panic(err)
+	}
+	defer dao.Close()
+	fmt.Println("进行数据库创建表当中......")
+	dao.DB.AutoMigrate(&models.User{})
+	//具体代码操作
+	user := models.User{Name: "小心", Age: 23}
+	////判断该表的主键是否为空，如果是为空的话就返回true
+	a := dao.DB.NewRecord(user)
+	fmt.Println("该主键为空吗?true/false  ", a)
+	//创建user
+	dao.DB.Create(&user)
+	dao.DB.NewRecord(user) //创建user后返回false
+
+}
+```
+
+
+
 ### 默认值
 
 可以通过 tag 定义字段的默认值，比如：
@@ -1213,7 +1280,7 @@ db.NewRecord(user) // 创建`user`后返回`false`
 ```go
 type User struct {
   ID   int64
-  Name string `gorm:"default:'小王子'"`
+  Name string `gorm:"default:'老王'"`
   Age  int64
 }
 ```
@@ -1227,22 +1294,61 @@ var user = User{Name: "", Age: 99}
 db.Create(&user)
 ```
 
+此时在表中创建的数据中Name字段就默认为"老王"
+
 上面代码实际执行的SQL语句是`INSERT INTO users("age") values('99');`，排除了零值字段`Name`，而在数据库中这一条数据会使用设置的默认值`小王子`作为Name字段的值。
 
 **注意：**所有字段的零值, 比如`0`, `""`,`false`或者其它`零值`，都不会保存到数据库内，但会使用他们的默认值。 如果你想避免这种情况，可以考虑使用指针或实现 `Scanner/Valuer`接口，比如：
 
 #### 使用指针方式实现零值存入数据库
 
+models层
+
 ```go
-// 使用指针
+package models
+
 type User struct {
-  ID   int64
-  Name *string `gorm:"default:'小王子'"`
-  Age  int64
+	ID   int64
+	Name *string `gorm:"default:'老王'"`
+	Age  int64
 }
-user := User{Name: new(string), Age: 18))}
-db.Create(&user)  // 此时数据库中该条记录name字段的值就是''
+
+func (u User) TableName() string {
+	return "user_profile"
+}
+
 ```
+
+main.go
+
+```go
+package main
+
+import (
+	"fmt"
+	"grom_crud/dao"
+	"grom_crud/models"
+)
+
+//var (
+//	db = dao.DB
+//)
+
+func main() {
+	err := dao.InitMysql()
+	if err != nil {
+		panic(err)
+	}
+	defer dao.Close()
+	fmt.Println("进行数据库创建表当中......")
+	dao.DB.AutoMigrate(&models.User{})
+	user := models.User{Name: new(string), Age: 18}
+	dao.DB.Create(&user)
+
+}
+```
+
+查看数据库可知新增的数据Name为0值
 
 #### 使用Scanner/Valuer接口方式实现零值存入数据库
 
@@ -1250,11 +1356,11 @@ db.Create(&user)  // 此时数据库中该条记录name字段的值就是''
 // 使用 Scanner/Valuer
 type User struct {
 	ID int64
-	Name sql.NullString `gorm:"default:'小王子'"` // sql.NullString 实现了Scanner/Valuer接口
+	Name sql.NullString `gorm:"default:'老王'"` // sql.NullString 实现了Scanner/Valuer接口
 	Age  int64
 }
 user := User{Name: sql.NullString{"", true}, Age:18}
-db.Create(&user)  // 此时数据库中该条记录name字段的值就是''
+dao.DB.Create(&user)  // 此时数据库中该条记录name字段的值就是''
 ```
 
 ### 扩展创建选项
@@ -1267,9 +1373,351 @@ db.Set("gorm:insert_option", "ON CONFLICT").Create(&product)
 // INSERT INTO products (name, code) VALUES ("name", "code") ON CONFLICT;
 ```
 
-接下来查看官方文档
 
-清单代码
+
+## 查询操作
+
+### 1.前期准备
+
+创建一个student（包含id,name,sex,age,score）的结构体，并通过数据迁移的形式在数据库中创建一个名为stu_profile的数据表
+
+```go
+
+package models
+
+type Student struct {
+	Id    uint `gorm:"primary key"`
+	Name  string
+	Sex   string
+	Age   int64
+	Score int
+}
+
+func (stu Student) TableName() string {
+	return "stu_profile"
+}
+
+
+
+```
+
+```go
+package main
+
+import (
+	"fmt"
+	"grom_crud/dao"
+	"grom_crud/models"
+)
+
+//var (
+//	db = dao.DB
+//)
+
+func main() {
+	err := dao.InitMysql()
+	if err != nil {
+		panic(err)
+	}
+	defer dao.Close()
+	fmt.Println("进行数据库创建表当中......")
+	//创建数据库表结构
+	dao.DB.AutoMigrate(&models.Student{})
+
+	stu1 := models.Student{3, "小花", "男", 35, 90}
+	dao.DB.Create(&stu1)
+
+```
+
+### 2.常用简单查询
+
+**dao.DB.First(&object)**
+
+```go
+var stu models.Student
+	dao.DB.First(&stu)//获得以主键为顺序的第一条记录
+//相当于select * from stu_profile order by primary key;
+```
+
+如果设置的主键为数字，则可以将主键作为条件进行对象查找。当主键是字符串时则需要额外注意避免sql注入。
+
+**dao.DB.First(&object)**
+
+```go
+var stu models.Student
+	dao.DB.First(&stu,10)
+//相当于select * from stu_profile where Id=10
+类似的还有
+dao.DB.First(&stu,10)
+//select * from stu_profile where Id =10
+dao.DB.First(&stus,[]int{1,2,3})
+//select * from stu_profile where Id in (1,2,3)
+//此外，如果主键是一个字符串(比如说是uuid),可以写成这样
+dao.DB.First(&stu,"id=?","1c64513f-f2b8-409f-ac47-e8c062e3465a")
+//相当于select * from stu_profile where Id="1c64513f-f2b8-409f-ac47-e8c062e3465a"
+```
+
+当目标对象有一个主键值，主键将会作为一个查询条件{Id:2}
+
+```go
+var stu = models.Student{Id:2}
+dao.DB.First(&stu)
+//相当于select * from stu_profile where Id = 2;
+var res models.Student
+db.Model(models.Student{Id:2}).First(&res)
+//相当于select * from stu_profile were Id = 2;
+```
+
+
+
+**dao.DB.Take(&object)**
+
+```go
+var stu models.Student
+	dao.DB.Take(&stu)//获取表中的一条记录，没有特别指定的顺序
+//相当于select *from stu_profile limit 1;
+```
+
+**dao.DB.Last(&object)**
+
+```go
+var stu models.Student
+dao.DB.Last(&stu)
+```
+
+注意:First和Last方法查询的出来的数据的顺序是以主键来参考的，如果定义的结构体字段中没有主键的话就使用结构体的第一个字段作为顺序参考
+
+Note:如果使用gorm提供的特定变量类型比如gorm.DeletedAt,查出来的结果将会不同
+
+```go
+type User struct {
+  ID           string `gorm:"primarykey;size:16"`
+  Name         string `gorm:"size:24"`
+  DeletedAt    gorm.DeletedAt `gorm:"index"`
+}
+
+var user = User{ID: 15}
+db.First(&user)
+//  SELECT * FROM `users` WHERE `users`.`id` = '15' AND `users`.`deleted_at` IS NULL ORDER BY `users`.`id` LIMIT 1
+
+```
+
+查询所有对象操作
+
+**dao.DB.Find(&objects)**
+
+```go
+var stus []models.Student
+	dao.DB.Find(&stus)
+	fmt.Println(stus)
+//结果如下
+                          
+[{1 小明 男 24 78} {2 小红 女 25 80} {3 小花 男 35 90}]
+
+additonal:
+var stus []models.Student
+	res := dao.DB.Find(&stus)
+	//fmt.Println(res)
+	fmt.Println(res.RowsAffected) //返回记录的总数。，相当于len(stus)
+	fmt.Println(res.Error)        //返回错误
+```
+
+### 3.Where条件进行查询
+
+```go
+//获得符合条件的第一条记录（按照主键顺序）
+var stu models.Student
+	dao.DB.Where("Name=?", "小明").First(&stu)
+	fmt.Println(stu)
+//获得除了小红以外的所有记录
+var stus []models.Student
+	dao.DB.Where("name<>?","小红").Find(&stus)
+	//Select * from stus Where Name <> '小红';
+
+//IN
+	var stus []models.Student
+= dao.DB.Where("name IN ?", []string{"小明", "小红"}).Find(&stus)
+//select * from stu_profile where name in('小明','小红')
+//Like(模糊查询)
+	dao.DB.Where("name LIKE ?", "%小明%").Find(&stus)
+	//select * from stu_profile where name='%小明%'
+//And
+	dao.DB.Where("name = ? AND age >= ? ", "小明", "24").Find(&stus)
+	//select * from stu_profile where name = '小明' and age>=24
+
+// Time
+db.Where("updated_at > ?", lastWeek).Find(&users)
+// SELECT * FROM users WHERE updated_at > '2000-01-01 00:00:00';
+
+//官网补充
+// BETWEEN
+db.Where("created_at BETWEEN ? AND ?", lastWeek, today).Find(&users)
+// SELECT * FROM users WHERE created_at BETWEEN '2000-01-01 00:00:00' AND '2000-01-0
+```
+
+### 4.结构体&map 条件
+
+```go
+//struct
+dao.DB.Where(&models.Student{Name: "小明", Age: 24}).First(&stu)
+//相当于select * from stu_proofile where name = '小明' and age = 24 oeder by id limit 1;
+//Map
+dao.DB.Where(map[string]interface{}{"name": "小明", "age": 20}).Find(&stus)
+
+//Slice
+	dao.DB.Where([]int64{1, 2, 3}).Find(&stus)
+```
+
+注意：当你用结构体进行查询的时候，Gorm将只能和一个非0值字段进行查询。也意味着你的字段值为 0,' ',false或者其他非0值将不会被用于查询条件使用
+
+```go
+dao.DB.Where(&models.Student{Name: "小明",Age :24}).Find(&stus)
+//相当于select * from stu_profile where name="小明"
+```
+
+如果你要将0值作为查询条件的话，你可以使用一个map,它的所包含的所有键值对都将作为查询条件
+
+```go
+dao.DB.Where(map[string]interface{}{"Name":"小明",”Age“:0}).Find(&stus)
+```
+
+当你用结构体进行查询的时候，你可以从结构体中指定一些特别的值去使用它并作为查询条件在相关的字段名或者数据库名例如
+
+```go
+dao.DB.Where(&models.Student{Name: "小明"}, "Name", "Age").Find(&stus)
+//相当于select * frm stu_profile where name="小明" and age=0
+
+dao.DB.Where(&models.Student{Name: "小明"},  "Age").Find(&stus)
+//select * from stu_profile where age =0;
+```
+
+### 5.内联条件查询
+
+查询条件可以被用作内敛方法像First和Find他们的功能类似于Where
+
+```go
+var stu models.Student
+	dao.DB.First(&stu, "Id= ?", "1")
+//select * from stu_profile where id='1';
+
+//普通的SQL
+	dao.DB.Find(&stu, "name=?", "小红")
+//select * from stu_profile where name ="小红";
+
+var stus []models.Student
+	dao.DB.Find(&stus, "name <> ? AND age > ?", "小红", 25)
+//相当于select * from stu_profile where name <> "小红"and age >25;表示查找name不等于小红以及age >35的对象
+
+//struct
+	dao.DB.Find(&stus, models.Student{Age: 25})
+//相当于select * from stu_profile where age = 25;
+
+//Map
+	dao.DB.Find(&stus, map[string]interface{}{"age": 25})
+```
+
+### 6.Not条件
+
+```go
+//Not条件查询
+	dao.DB.Not("Name", "小红").First(&stu)
+//select * from stu_profile where name<> "小红" limit 1;
+//Not In
+dao.DB.Not("name", []string{"小红", "小明"}).Find(&stus)
+//select * from stu_profile where name NOT in ("小红", "小明");
+	dao.DB.Not([]int64{1, 3}).First(&stu)
+//相当于select * from stu_profile where id Not IN(1,2)
+
+	dao.DB.Not("name=?", "小红").First(&stu)
+//相当于select * from stu_profile where not(name="小红")
+//struct
+	dao.DB.Not(models.Student{Name: "小明"}).First(&stu)
+//相当于select * from stu_profile where name <>"小明"
+
+```
+
+### 7.or条件
+
+```go
+	dao.DB.Where("name= ?", "小红").Or("name=?", "小明").Find(&stus)
+	fmt.Println(stus)
+//select * from stu_profile where name='小红' or name='小明'
+
+//struct 
+	dao.DB.Where("name='小花").Or(models.Student{Name: "小红", Age: 25}).Find(&stus)
+//select * from stu_profile where name ='小花'or(name='小红'AND age=25)
+
+//Map
+	dao.DB.Where("name='小花'").Or(map[string]interface{}{"name": "小红", "age": 25}).Find(&stus)
+//select * from stu_profile where name='小花'or(name='小红'And age = 25)
+
+//查询具体的字段
+	dao.DB.Select("name", "age").Find(&stus)
+//select name,age from stu_profile;
+
+	dao.DB.Select([]string{"name", "age"}).Find(&stus)
+	//select name,age from stu_profile;
+	
+	dao.DB.Table("stu_prfile").Select("COALESCE", 42).Rows()
+//select COALESCE(age,'42') from stu_profile
+```
+
+### 8.Order
+
+```go
+//按照指定顺序进行查询操作
+	//按照age降序的顺序进行查询
+	dao.DB.Order("age desc,name").Find(&stus)
+	//select * from stu_profile order by age desc,name;
+	//多个顺序进行查找
+	dao.DB.Order("age desc").Order("name").Find(&stus)
+	//select * from stu_profile order by age desc,name;
+
+dao.DB.Clauses(clause.OrderBy{
+  Expression: clause.Expr{SQL: "FIELD(id,?)", Vars: []interface{}{[]int{1, 2, 3}}, WithoutParentheses: true},
+}).Find(&stus{})
+// SELECT * FROM users ORDER BY FIELD(id,1,2,3)
+```
+
+### 9.limit&offset
+
+Limit 查找指定记录最大数量去查询
+
+Offset在执行记录之前跳过所指定的记录数
+
+```go
+var stus1 []models.Student
+	var stus2 []models.Student
+	//从表里查询三条记录
+	dao.DB.Limit(3).Find(&stus)
+	fmt.Println(stus)
+	dao.DB.Limit(5).Find(&stus1).Limit(-1).Find(&stus2)
+	//selcet * from stu_profile limit 5;(stus1)
+	//selcet * from stu_profile ;(stus2)
+	fmt.Println(stus1)
+	fmt.Println(stus2)
+	fmt.Println("\n")
+
+	dao.DB.Offset(3).Find(&stus)
+	//select * from stu_profile offset 3;
+	fmt.Println(stus)
+	dao.DB.Limit(10).Offset(5).Find(&stus)
+	// SELECT * FROM stu_prfile  OFFSET 5 LIMIT 10;
+	fmt.Println(stus)
+	dao.DB.Offset(10).Find(&stus1).Offset(-1).Find(&stus2)
+//select * from stu_profile offset 10;(stus1)
+//select * from stu_profile ;(stus2)
+```
+
+ 
+
+
+
+
+
+# gorm的应用实战
+
+清单小项目实现对数据库的增删查改的代码
 
 main.go
 
